@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>火山噴火 VEI スケール 比較ビジュアライザー</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 min-h-screen p-4">
+<div class="max-w-5xl mx-auto">
+  <h1 class="text-2xl font-bold text-center text-orange-400 mb-1">火山噴火 VEI スケール 比較ビジュアライザー</h1>
+  <p class="text-center text-gray-400 text-sm mb-6">Volcanic Explosivity Index — 対数スケールで比較</p>
+
+  <!-- VEI Table -->
+  <div class="bg-gray-800 rounded-xl p-5 mb-6 overflow-x-auto">
+    <h2 class="font-semibold text-orange-300 mb-3">VEIスケール一覧</h2>
+    <table class="w-full text-sm text-gray-200 border-collapse">
+      <thead>
+        <tr class="bg-gray-700">
+          <th class="border border-gray-600 px-3 py-2">VEI</th>
+          <th class="border border-gray-600 px-3 py-2">噴出量 (m³)</th>
+          <th class="border border-gray-600 px-3 py-2">噴煙高 (km)</th>
+          <th class="border border-gray-600 px-3 py-2">頻度</th>
+          <th class="border border-gray-600 px-3 py-2">規模</th>
+          <th class="border border-gray-600 px-3 py-2">主要事例</th>
+        </tr>
+      </thead>
+      <tbody id="veiTbody"></tbody>
+    </table>
+  </div>
+
+  <!-- Charts -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+    <div class="bg-gray-800 rounded-xl p-4">
+      <h2 class="font-semibold text-orange-300 mb-3">噴出量比較（対数スケール）</h2>
+      <canvas id="volumeChart" height="350"></canvas>
+    </div>
+    <div class="bg-gray-800 rounded-xl p-4">
+      <h2 class="font-semibold text-orange-300 mb-3">噴煙高さ比較（km）</h2>
+      <canvas id="plumeChart" height="350"></canvas>
+    </div>
+  </div>
+
+  <!-- Notable eruptions -->
+  <div class="bg-gray-800 rounded-xl p-5">
+    <h2 class="font-semibold text-orange-300 mb-4">主要噴火事例詳細</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" id="eruptionCards"></div>
+  </div>
+</div>
+
+<script>
+const VEI_DATA = [
+  { vei:0, volume:'< 1万', volumeM3:1e4,    plume:0.1, freq:'継続的',      scale:'非爆発的', color:'#4ade80', examples:['キラウエア（継続）'] },
+  { vei:1, volume:'1万〜',  volumeM3:1e5,    plume:0.3, freq:'毎日',        scale:'微小',     color:'#86efac', examples:['ストロンボリ'] },
+  { vei:2, volume:'10万〜', volumeM3:1e6,    plume:3,   freq:'毎週',        scale:'小',       color:'#fde047', examples:['桜島','雲仙普賢岳1991'] },
+  { vei:3, volume:'100万〜',volumeM3:1e7,    plume:10,  freq:'数ヶ月に1回', scale:'中',       color:'#fb923c', examples:['有珠山2000','スリカウ島'] },
+  { vei:4, volume:'1千万〜',volumeM3:1e8,    plume:25,  freq:'数十年に1回', scale:'大',       color:'#f97316', examples:['浅間山1783','スフリエール'] },
+  { vei:5, volume:'1億〜',  volumeM3:1e9,    plume:35,  freq:'数百年に1回', scale:'巨大',     color:'#ef4444', examples:['富士山1707(宝永)','セントへレンズ1980'] },
+  { vei:6, volume:'10億〜', volumeM3:1e10,   plume:40,  freq:'数百年に1回', scale:'超巨大',   color:'#dc2626', examples:['ピナトゥボ1991','クラカタウ1883'] },
+  { vei:7, volume:'100億〜',volumeM3:1e11,   plume:50,  freq:'数千年に1回', scale:'極大',     color:'#991b1b', examples:['タンボラ1815','タウポ180AD'] },
+  { vei:8, volume:'1兆〜',  volumeM3:1e12,   plume:60,  freq:'数万年以上',  scale:'超極大',   color:'#7f1d1d', examples:['イエローストーン2.1Mya','トバ74kya'] },
+];
+
+const NOTABLE = [
+  { name:'富士山 宝永噴火',  year:1707, vei:5, country:'日本', casualties:'灰害甚大', note:'江戸時代最後の噴火。降灰は関東一円に及ぶ'},
+  { name:'クラカタウ',       year:1883, vei:6, country:'インドネシア', casualties:'約36,000人', note:'爆発音は4,800km先まで到達。大津波を発生'},
+  { name:'ピナトゥボ',       year:1991, vei:6, country:'フィリピン', casualties:'約800人', note:'20世紀2番目の規模。約2万人が避難'},
+  { name:'タンボラ山',       year:1815, vei:7, country:'インドネシア', casualties:'約71,000〜92,000人', note:'記録史上最大の噴火。「夏のない年」1816を引き起こす'},
+];
+
+// Table
+const tbody = document.getElementById('veiTbody');
+VEI_DATA.forEach((d, i) => {
+  const tr = document.createElement('tr');
+  tr.className = i % 2 === 0 ? 'bg-gray-800' : 'bg-gray-750';
+  tr.innerHTML = `
+    <td class="border border-gray-600 px-3 py-2 text-center font-bold text-xl" style="color:${d.color}">VEI ${d.vei}</td>
+    <td class="border border-gray-600 px-3 py-2 text-center">${d.volume} m³</td>
+    <td class="border border-gray-600 px-3 py-2 text-center">${d.plume} km</td>
+    <td class="border border-gray-600 px-3 py-2 text-center text-gray-300">${d.freq}</td>
+    <td class="border border-gray-600 px-3 py-2 text-center font-medium">${d.scale}</td>
+    <td class="border border-gray-600 px-3 py-2 text-gray-300 text-xs">${d.examples.join(' / ')}</td>
+  `;
+  tbody.appendChild(tr);
+});
+
+// Volume Chart (logarithmic)
+function drawLogBarChart(canvasId, data, labelFn, valueFn, colorFn, titleFn) {
+  const canvas = document.getElementById(canvasId);
+  const W = canvas.offsetWidth || 380;
+  canvas.width = W;
+  const H = 350;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  const PAD = { l: 55, r: 15, t: 20, b: 50 };
+  const barArea = H - PAD.t - PAD.b;
+  const barWidth = (W - PAD.l - PAD.r) / data.length - 4;
+
+  const values = data.map(valueFn);
+  const logValues = values.map(v => Math.log10(Math.max(v, 1)));
+  const maxLog = Math.max(...logValues);
+
+  // Axes
+  ctx.strokeStyle = '#6b7280'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(PAD.l, PAD.t); ctx.lineTo(PAD.l, H - PAD.b);
+  ctx.lineTo(W - PAD.r, H - PAD.b); ctx.stroke();
+
+  // Y axis labels (log)
+  for (let i = 0; i <= maxLog; i += 2) {
+    const y = H - PAD.b - (i / maxLog) * barArea;
+    ctx.strokeStyle = '#374151'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W - PAD.r, y); ctx.stroke();
+    ctx.fillStyle = '#9ca3af'; ctx.font = '9px sans-serif'; ctx.textAlign = 'right';
+    ctx.fillText('10^' + i, PAD.l - 3, y + 3);
+  }
+
+  // Bars
+  data.forEach((d, i) => {
+    const logV = logValues[i];
+    const barH = (logV / maxLog) * barArea;
+    const x = PAD.l + i * ((W - PAD.l - PAD.r) / data.length) + 2;
+    const y = H - PAD.b - barH;
+
+    ctx.fillStyle = colorFn(d);
+    ctx.fillRect(x, y, barWidth, barH);
+
+    // Label
+    ctx.fillStyle = '#d1d5db'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(labelFn(d), x + barWidth / 2, H - PAD.b + 14);
+
+    // Notable markers
+    if (d.vei === 5 || d.vei === 6 || d.vei === 7) {
+      ctx.fillStyle = '#fbbf24'; ctx.font = '8px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('★', x + barWidth / 2, y - 4);
+    }
+  });
+}
+
+function drawLinearBarChart(canvasId, data, labelFn, valueFn, colorFn) {
+  const canvas = document.getElementById(canvasId);
+  const W = canvas.offsetWidth || 380;
+  canvas.width = W;
+  const H = 350;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  const PAD = { l: 45, r: 15, t: 20, b: 50 };
+  const barArea = H - PAD.t - PAD.b;
+  const barWidth = (W - PAD.l - PAD.r) / data.length - 4;
+  const maxVal = Math.max(...data.map(valueFn));
+
+  ctx.strokeStyle = '#6b7280'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(PAD.l, PAD.t); ctx.lineTo(PAD.l, H - PAD.b);
+  ctx.lineTo(W - PAD.r, H - PAD.b); ctx.stroke();
+
+  [0, 20, 40, 60].forEach(v => {
+    const y = H - PAD.b - (v / maxVal) * barArea;
+    ctx.strokeStyle = '#374151'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W - PAD.r, y); ctx.stroke();
+    ctx.fillStyle = '#9ca3af'; ctx.font = '9px sans-serif'; ctx.textAlign = 'right';
+    ctx.fillText(v + 'km', PAD.l - 3, y + 3);
+  });
+
+  data.forEach((d, i) => {
+    const val = valueFn(d);
+    const barH = (val / maxVal) * barArea;
+    const x = PAD.l + i * ((W - PAD.l - PAD.r) / data.length) + 2;
+    const y = H - PAD.b - barH;
+    ctx.fillStyle = colorFn(d);
+    ctx.fillRect(x, y, barWidth, barH);
+    ctx.fillStyle = '#d1d5db'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(labelFn(d), x + barWidth / 2, H - PAD.b + 14);
+    ctx.fillStyle = '#fbbf24'; ctx.font = '9px sans-serif';
+    ctx.fillText(val + 'km', x + barWidth / 2, y - 4);
+  });
+}
+
+drawLogBarChart('volumeChart', VEI_DATA,
+  d => 'VEI ' + d.vei, d => d.volumeM3, d => d.color);
+drawLinearBarChart('plumeChart', VEI_DATA,
+  d => 'VEI ' + d.vei, d => d.plume, d => d.color);
+
+// Eruption cards
+const container = document.getElementById('eruptionCards');
+NOTABLE.forEach(e => {
+  const veiData = VEI_DATA[e.vei];
+  const div = document.createElement('div');
+  div.className = 'bg-gray-700 rounded-lg p-3 text-sm';
+  div.innerHTML = `
+    <div class="flex items-center gap-2 mb-2">
+      <span class="font-bold text-lg" style="color:${veiData.color}">VEI ${e.vei}</span>
+      <span class="font-medium text-white">${e.name}</span>
+    </div>
+    <p class="text-gray-300 text-xs">${e.year}年 | ${e.country}</p>
+    <p class="text-red-300 text-xs mt-1">死者: ${e.casualties}</p>
+    <p class="text-gray-400 text-xs mt-1">${e.note}</p>
+  `;
+  container.appendChild(div);
+});
+</script>
+</body>
+</html>
